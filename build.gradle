@@ -1,0 +1,115 @@
+// Apply the java plugin to add support for Java
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'war'
+apply plugin: 'jetty'
+
+buildscript {
+    repositories {
+    	jcenter()
+    	mavenCentral()
+        maven {
+        		url 'http://dl.bintray.com/cjstehno/public'
+		}  	  
+    }
+    dependencies {
+        classpath (
+        			'org.springframework.boot:spring-boot-gradle-plugin:1.2.5.RELEASE',
+        			'gradle-templates:gradle-templates:1.5',
+        			'org.gradle.api.plugins:gradle-cargo-plugin:1.5'
+        			)
+    }
+}
+apply plugin: 'cargo'
+apply plugin: 'templates' 
+apply plugin: 'spring-boot'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+defaultTasks 'clean', 'build'
+
+sourceSets {
+    integrationTest {
+            java.srcDir file('src/integrationTest/java')
+            resources.srcDir file('src/integrationTest/resources')
+    }
+}
+
+task 'create-dirs' << {
+    sourceSets.all { set ->
+        set.allSource.srcDirs.each {it.mkdirs()}
+    }
+}
+
+// In this section you declare where to find the dependencies of your project
+repositories {
+	mavenCentral()
+}
+
+// In this section you declare the dependencies for your production and test code
+dependencies {
+	integrationTestCompile sourceSets.main.output
+    integrationTestCompile configurations.testCompile
+    integrationTestCompile sourceSets.test.output
+    integrationTestRuntime configurations.testRuntime
+    
+    def cargoVersion = '1.3.3'
+	cargo "org.codehaus.cargo:cargo-core-uberjar:$cargoVersion",
+	      "org.codehaus.cargo:cargo-ant:$cargoVersion"
+	        
+    compile 'org.jboss.resteasy:resteasy-jaxrs:3.0.10.Final'
+	compile 'org.jboss.resteasy:resteasy-spring:3.0.10.Final'
+	compile 'org.jboss.resteasy:resteasy-jackson2-provider:3.0.10.Final'
+	
+    compile("org.springframework.boot:spring-boot-starter-web:1.2.2.RELEASE") {
+        exclude module: "spring-boot-starter-tomcat"
+    }
+    compile("org.springframework.boot:spring-boot-starter-jetty:1.2.2.RELEASE")
+    
+    testCompile("junit:junit")
+    testCompile("org.springframework.boot:spring-boot-starter-test:1.2.2.RELEASE")
+}
+
+httpPort = 8080
+stopPort = 9451
+stopKey = 'stopkey'
+
+cargo {
+    containerId = 'jetty7x'
+    port = httpPort
+
+    local {
+        installer {
+            installUrl = "https://repo1.maven.org/maven2/org/eclipse/jetty/jetty-distribution/7.6.9.v20130131/jetty-distribution-7.6.9.v20130131.zip" // "file:/$
+            downloadDir = file("$buildDir/download")
+            extractDir = file("$buildDir/extract")
+        }
+    }
+}
+
+task integrationTest( type: Test, dependsOn: "test" ) {
+        description = "Run integration tests"
+        group = "Verification"
+
+        testClassesDir = sourceSets.integrationTest.output.classesDir
+        classpath = sourceSets.integrationTest.runtimeClasspath
+
+}
+
+integrationTest.doFirst{
+        println " > ..."
+
+        tasks.jettyRun.contextPath = '/'
+        tasks.jettyRun.daemon=true
+        tasks.jettyRun.execute()
+}
+
+integrationTest.doLast {
+        println " > test"
+        tasks.jettyStop.execute()
+}
+
+// Make sure 'check' task calls integration test
+check.dependsOn integrationTest
+
